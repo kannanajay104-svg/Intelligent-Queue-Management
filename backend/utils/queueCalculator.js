@@ -1,10 +1,21 @@
 export function calculateAverageServiceTime(completedTokens, fallback) {
-  const durations = completedTokens.map((token) => token.serviceDuration).filter((value) => Number.isFinite(value) && value > 0);
-  return durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : fallback;
+  const fallbackVal = Number.isFinite(Number(fallback)) && Number(fallback) > 0 ? Number(fallback) : 10;
+  // Exclude sub-15s clicks and extreme overnight/multiday outliers (>45 min or >3x standard duration)
+  const maxAllowed = Math.max(30, fallbackVal * 3);
+  const durations = completedTokens
+    .map((token) => token.serviceDuration)
+    .filter((value) => Number.isFinite(value) && value >= 0.25 && value <= maxAllowed);
+
+  if (!durations.length) return fallbackVal;
+  const average = durations.reduce((sum, value) => sum + value, 0) / durations.length;
+  return Math.round(average * 10) / 10;
 }
 
 export function calculateServiceDuration(start, end) {
-  return Math.max(0, (new Date(end) - new Date(start)) / 60000);
+  const diffMinutes = (new Date(end) - new Date(start)) / 60000;
+  // Cap at realistic maximum 30 mins if token was left open overnight
+  if (diffMinutes > 120) return 15;
+  return Math.max(0, diffMinutes);
 }
 
 export function calculateActualWaitingTime(created, start) {
