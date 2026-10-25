@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import socket from './services/socket.js';
 import api from './services/api.js';
 import { useAuth } from './context/AuthContext.jsx';
 import { StaffDashboardPage, StaffLoginPage, StaffProfilePage } from './StaffPages.jsx';
 
-const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', { autoConnect: false });
 const fmt = (value) => value == null ? '—' : `${Math.round(value)} min`;
 const waitFmt = (value) => `${Math.max(0, Math.round(Number(value) || 0))} min`;
 

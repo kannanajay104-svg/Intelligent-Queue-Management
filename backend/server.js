@@ -16,10 +16,23 @@ import { ensureStaffAccounts } from './utils/defaultStaff.js';
 import Token from './models/Token.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
+const clientOrigin = process.env.CLIENT_URL ? process.env.CLIENT_URL.trim().replace(/\/+$/, '') : 'http://localhost:5173';
+const normalizedClientOrigin = clientOrigin.startsWith('http') ? clientOrigin : `https://${clientOrigin}`;
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || origin === normalizedClientOrigin || origin === clientOrigin || origin.endsWith('.vercel.app') || origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+};
+
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' } });
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+const io = new Server(server, { cors: corsOptions });
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan('dev'));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'queuewise-api' }));
