@@ -53,6 +53,18 @@ router.post('/staff/login', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.post('/switch-center', authenticateUser, authorizeRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const { serviceCenterId } = req.body;
+    if (!serviceCenterId || !mongoose.Types.ObjectId.isValid(serviceCenterId)) {
+      return res.status(400).json({ message: 'Please select a valid service center.' });
+    }
+    const serviceCenter = await ServiceCenter.findOne({ _id: serviceCenterId, isActive: true });
+    if (!serviceCenter) return res.status(404).json({ message: 'Active service center not found.' });
+    res.json({ token: sign(req.user, serviceCenter._id), user: publicUser(req.user, serviceCenter) });
+  } catch (error) { next(error); }
+});
+
 router.get('/me', authenticateUser, async (req, res, next) => {
   try {
     if (req.user.role === 'staff') return res.json({ user: publicStaff(req.user) });

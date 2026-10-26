@@ -26,8 +26,9 @@ export function AuthProvider({ children }) {
   async function loginStaff(credentials) { const { data } = await api.post('/auth/staff/login', credentials); persist(data); }
   async function register(credentials) { const { data } = await api.post('/auth/register', credentials); return data; }
   async function updateProfile(updates) { const { data } = await api.patch('/auth/me', updates); sessionStorage.setItem('queuewise_user', JSON.stringify(data.user)); setUser(data.user); return data.user; }
+  async function switchCenter(serviceCenterId) { const { data } = await api.post('/auth/switch-center', { serviceCenterId }); persist(data); return data.user; }
   function persist(data) { sessionStorage.setItem('queuewise_token', data.token); sessionStorage.setItem('queuewise_user', JSON.stringify(data.user)); setUser(data.user); setLoading(false); }
   function logout() { sessionStorage.removeItem('queuewise_token'); sessionStorage.removeItem('queuewise_user'); localStorage.removeItem('queuewise_token'); localStorage.removeItem('queuewise_user'); setUser(null); setLoading(false); }
-  return <AuthContext.Provider value={{ user, loading, login, loginStaff, register, updateProfile, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, loginStaff, register, updateProfile, switchCenter, logout }}>{children}</AuthContext.Provider>;
 }
 export const useAuth = () => useContext(AuthContext);

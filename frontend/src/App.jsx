@@ -8,6 +8,26 @@ import { StaffDashboardPage, StaffLoginPage, StaffProfilePage } from './StaffPag
 const fmt = (value) => value == null ? '—' : `${Math.round(value)} min`;
 const waitFmt = (value) => `${Math.max(0, Math.round(Number(value) || 0))} min`;
 
+export const DEFAULT_SERVICE_CENTERS = [
+  { _id: '6abdfda871878f03766d49cb', name: 'Bank' },
+  { _id: '6abdfda971878f03766d49d0', name: 'Clinic' },
+  { _id: '6abdfda971878f03766d49cf', name: 'College' },
+  { _id: '6abdfda971878f03766d49cd', name: 'Government Office' },
+  { _id: '6abdfda971878f03766d49cc', name: 'Hospital' },
+  { _id: '6abdfda971878f03766d49ce', name: 'Railway Station' }
+];
+
+export function getStoredServiceCenters() {
+  try {
+    const raw = localStorage.getItem('queuewise_service_centers');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_SERVICE_CENTERS;
+}
+
 export function Shell({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -27,11 +47,58 @@ function PasswordField({ id, value, onChange, placeholder, required = true }) {
 
 function AuthPage({ mode }) {
   const { user, login, register } = useAuth(); const navigate = useNavigate(); const location = useLocation();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '', serviceCenterId: '' }); const [serviceCenters, setServiceCenters] = useState([]); const [error, setError] = useState(''); const [message, setMessage] = useState(location.state?.message || ''); const [busy, setBusy] = useState(false);
-  useEffect(() => { if (mode === 'login') api.get('/service-centers').then(({ data }) => setServiceCenters(data.serviceCenters || [])).catch(() => setError('Unable to load service centers. Please try again.')); }, [mode]);
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '', serviceCenterId: '' });
+  const [serviceCenters, setServiceCenters] = useState(getStoredServiceCenters);
+  const [loadingCenters, setLoadingCenters] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState(location.state?.message || '');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'login') {
+      let active = true;
+      setLoadingCenters(true);
+      api.get('/service-centers')
+        .then(({ data }) => {
+          if (!active) return;
+          const list = data.serviceCenters || [];
+          if (list.length > 0) {
+            setServiceCenters(list);
+            localStorage.setItem('queuewise_service_centers', JSON.stringify(list));
+          }
+        })
+        .catch(() => {
+          console.warn('Backend service centers request delayed or waking up.');
+        })
+        .finally(() => {
+          if (active) setLoadingCenters(false);
+        });
+      return () => { active = false; };
+    }
+  }, [mode]);
+
   if (user) return <Navigate to="/" />;
-  async function submit(event) { event.preventDefault(); if (mode === 'login' && !form.serviceCenterId) { setError('Please select a service center.'); return; } if (mode === 'register' && form.password !== form.confirmPassword) { setError('Passwords do not match.'); return; } setBusy(true); setError(''); setMessage(''); try { if (mode === 'login') { await login({ email: form.email, password: form.password, serviceCenterId: form.serviceCenterId }); navigate('/'); } else { const result = await register(form); navigate('/customer/login', { replace: true, state: { message: result.message || 'Account created successfully.' } }); } } catch (requestError) { setError(requestError.response?.data?.message || 'Something went wrong'); } finally { setBusy(false); } }
-  return <div className="auth-page"><div className="auth-panel"><div className="brand"><span className="brand-mark">Q</span><span>queuewise</span></div><span className="eyebrow">{mode === 'login' ? 'WELCOME BACK' : 'START YOUR VISIT'}</span><h1>{mode === 'login' ? <>Your place in line,<br /><em>made visible.</em></> : <>Join the queue<br /><em>without the guesswork.</em></>}</h1><p className="muted">{mode === 'login' ? 'Sign in to see your live queue status.' : 'Create a customer account to get a digital token.'}</p><form onSubmit={submit}>{mode !== 'login' && <label>Name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Your full name" /></label>}<label>Email<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" /></label>{mode !== 'login' && <label>Phone Number<input required inputMode="numeric" pattern="[0-9]{10}" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value.replace(/\D/g, '').slice(0, 10) })} placeholder="10-digit mobile number" /></label>}<label>Password<PasswordField id="customer-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="At least 6 characters" /></label>{mode !== 'login' && <label>Confirm Password<PasswordField id="customer-confirm-password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} placeholder="Repeat your password" /></label>}{mode === 'login' && <label>Service Center<select required value={form.serviceCenterId} onChange={(event) => setForm({ ...form, serviceCenterId: event.target.value })}><option value="">Select Service Center</option>{serviceCenters.map((center) => <option key={center._id} value={center._id}>{center.name}</option>)}</select></label>}{message && <div className="inline-message">{message}</div>}{error && <div className="error-message">{error}</div>}<button className="primary-button" disabled={busy || (mode === 'login' && !serviceCenters.length)}>{busy ? 'Working…' : mode === 'login' ? 'Enter workspace' : 'Create account'} <span>→</span></button></form><p className="switch-link">{mode === 'login' ? 'New here? ' : 'Already have an account? '}<button type="button" onClick={() => navigate(mode === 'login' ? '/customer/signup' : '/customer/login')}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></p></div><div className="auth-art"><div className="art-number">03</div><p>“The calmest place<br />in a busy day.”</p><span className="art-line" /></div></div>;
+  async function submit(event) {
+    event.preventDefault();
+    if (mode === 'login' && !form.serviceCenterId) { setError('Please select a service center.'); return; }
+    if (mode === 'register' && form.password !== form.confirmPassword) { setError('Passwords do not match.'); return; }
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (mode === 'login') {
+        await login({ email: form.email, password: form.password, serviceCenterId: form.serviceCenterId });
+        navigate('/');
+      } else {
+        const result = await register(form);
+        navigate('/customer/login', { replace: true, state: { message: result.message || 'Account created successfully.' } });
+      }
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="auth-page"><div className="auth-panel"><div className="brand"><span className="brand-mark">Q</span><span>queuewise</span></div><span className="eyebrow">{mode === 'login' ? 'WELCOME BACK' : 'START YOUR VISIT'}</span><h1>{mode === 'login' ? <>Your place in line,<br /><em>made visible.</em></> : <>Join the queue<br /><em>without the guesswork.</em></>}</h1><p className="muted">{mode === 'login' ? 'Sign in to see your live queue status.' : 'Create a customer account to get a digital token.'}</p><form onSubmit={submit}>{mode !== 'login' && <label>Name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Your full name" /></label>}<label>Email<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" /></label>{mode !== 'login' && <label>Phone Number<input required inputMode="numeric" pattern="[0-9]{10}" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value.replace(/\D/g, '').slice(0, 10) })} placeholder="10-digit mobile number" /></label>}<label>Password<PasswordField id="customer-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="At least 6 characters" /></label>{mode !== 'login' && <label>Confirm Password<PasswordField id="customer-confirm-password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} placeholder="Repeat your password" /></label>}{mode === 'login' && <label>Service Center<select required value={form.serviceCenterId} onChange={(event) => setForm({ ...form, serviceCenterId: event.target.value })}><option value="">{loadingCenters && !serviceCenters.length ? 'Connecting to server…' : 'Select Service Center'}</option>{serviceCenters.map((center) => <option key={center._id} value={center._id}>{center.name}</option>)}</select></label>}{message && <div className="inline-message">{message}</div>}{error && <div className="error-message">{error}</div>}<button className="primary-button" disabled={busy || (mode === 'login' && !serviceCenters.length)}>{busy ? 'Working…' : mode === 'login' ? 'Enter workspace' : 'Create account'} <span>→</span></button></form><p className="switch-link">{mode === 'login' ? 'New here? ' : 'Already have an account? '}<button type="button" onClick={() => navigate(mode === 'login' ? '/customer/signup' : '/customer/login')}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></p></div><div className="auth-art"><div className="art-number">03</div><p>“The calmest place<br />in a busy day.”</p><span className="art-line" /></div></div>;
 }
 
 function ProfilePage() {
@@ -63,12 +130,96 @@ function ProfilePage() {
 }
 
 function CustomerDashboard() {
-  const { user } = useAuth(); const serviceCenter = user.serviceCenter; const [services, setServices] = useState([]); const [tokens, setTokens] = useState([]); const [selected, setSelected] = useState(''); const [queue, setQueue] = useState(null); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(true); const [message, setMessage] = useState(''); const active = tokens.find((token) => String(token.serviceCenter?._id || token.serviceCenter) === String(serviceCenter?._id) && ['WAITING', 'CALLED', 'IN_PROGRESS'].includes(token.status)); const queuePosition = active?.queuePosition ?? (active?.peopleAhead !== null && active?.peopleAhead !== undefined ? active.peopleAhead + 1 : null);
-  useEffect(() => { if (!serviceCenter?._id) { setMessage('Please sign in again and select a service center.'); setLoading(false); return; } Promise.all([api.get(`/services?serviceCenterId=${serviceCenter._id}`), api.get('/tokens/my')]).then(([serviceResponse, tokenResponse]) => { const available = serviceResponse.data.services || []; const existing = (tokenResponse.data.tokens || []).filter((token) => String(token.serviceCenter?._id || token.serviceCenter) === String(serviceCenter._id)); setServices(available); setTokens(existing); setQueue({ currentToken: existing.find((token) => ['WAITING', 'CALLED', 'IN_PROGRESS'].includes(token.status))?.currentToken || null }); setSelected(available[0]?._id || ''); }).catch((error) => setMessage(error.response?.data?.message || 'Unable to load services for this service center.')).finally(() => setLoading(false)); }, [serviceCenter?._id]);
-  useEffect(() => { if (!active?.service?._id) return undefined; socket.connect(); socket.emit('join-service', { serviceCenterId: active.serviceCenter?._id || serviceCenter?._id, serviceId: active.service._id }); const handler = (data) => { setQueue(data); const item = data.queue?.find((entry) => String(entry.tokenId) === String(active._id)); if (item) setTokens((current) => current.map((token) => token._id === active._id ? { ...token, ...item } : token)); }; socket.on('QUEUE_UPDATED', handler); return () => { socket.off('QUEUE_UPDATED', handler); socket.disconnect(); }; }, [active?._id, active?.service?._id, active?.serviceCenter?._id, serviceCenter?._id]);
-  async function generate() { if (!selected) { setMessage('Choose a service before generating a token.'); return; } setBusy(true); setMessage(''); try { const { data } = await api.post('/tokens', { serviceCenterId: serviceCenter._id, serviceId: selected }); setTokens((current) => [data.token, ...current]); setMessage('Your token is ready.'); } catch (error) { setMessage(error.response?.data?.message || 'Unable to generate token'); } finally { setBusy(false); } }
-  async function cancel() { setBusy(true); try { await api.patch(`/tokens/${active._id}/cancel`); setTokens((current) => current.map((token) => token._id === active._id ? { ...token, status: 'CANCELLED' } : token)); } catch (error) { setMessage(error.response?.data?.message || 'Unable to cancel token'); } finally { setBusy(false); } }
-  return <Shell><section className="page-heading"><div><span className="eyebrow">CUSTOMER DASHBOARD</span><h1>Your queue, at a glance.</h1><p className="muted">The estimate moves with the line, so you always know what comes next.</p></div><div className="date-stamp">LIVE / {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}<br />CENTER / {serviceCenter?.name || '—'}</div></section><section className="stats-grid"><Metric label="My token" value={active?.tokenNumber || '—'} accent /><Metric label="People ahead" value={active?.peopleAhead ?? '—'} /><Metric label="Estimated wait" value={active ? waitFmt(active.estimatedWaitingTime) : '—'} /><Metric label="Now serving" value={queue?.currentToken || '—'} /></section><div className="content-grid"><div className="panel queue-panel"><div className="panel-heading"><div><span className="eyebrow" role="button" tabIndex="0" onClick={() => document.getElementById('service-list')?.focus()}>GET A TOKEN</span><h2>Choose a service</h2></div><span className="service-count">{loading ? 'Loading…' : `${services.length} available`}</span></div>{message && <p className="inline-message">{message}</p>}{services.length ? <div className="service-list" id="service-list" tabIndex="-1">{services.map((service) => <button className={`service-option ${selected === service._id ? 'selected' : ''}`} key={service._id} onClick={() => setSelected(service._id)}><span className="service-icon">{service.prefix}</span><span><strong>{service.name}</strong><small>{service.description || 'Service desk'} · ~{service.averageServiceDuration} min</small></span><span className="radio-dot" /></button>)}</div> : !loading && <div className="empty-state"><span>✦</span><p>No active services are available.</p></div>}<button className="primary-button" onClick={generate} disabled={!selected || busy || active}>{busy ? 'Generating…' : active ? 'Active token in progress' : 'Generate token'} <span>→</span></button></div><div className="panel current-panel"><div className="panel-heading"><div><span className="eyebrow">CURRENT VISIT</span><h2>{active ? active.service?.name || 'Your service' : 'No active token'}</h2></div>{active && <span className={`status-pill ${active.status.toLowerCase()}`}>{active.status.replace('_', ' ')}</span>}</div>{active ? <><div className="big-token">{active.tokenNumber}</div><div className="detail-row"><span>Service center</span><strong>{active.serviceCenter?.name || serviceCenter?.name || '—'}</strong></div><div className="detail-row"><span>Queue position</span><strong>#{queuePosition ?? '—'}</strong></div><div className="detail-row"><span>Expected service</span><strong>~{active.service?.averageServiceDuration || 10} min</strong></div>{active.status === 'WAITING' && <button className="quiet-button" onClick={cancel} disabled={busy}>Cancel token</button>}</> : <div className="empty-state"><span>✦</span><p>Your next visit will appear here.</p></div>}</div></div></Shell>;
+  const { user, switchCenter } = useAuth();
+  const serviceCenter = user.serviceCenter;
+  const [centers, setCenters] = useState(getStoredServiceCenters);
+  const [switching, setSwitching] = useState(false);
+  const [services, setServices] = useState([]);
+  const [tokens, setTokens] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [queue, setQueue] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const active = tokens.find((token) => String(token.serviceCenter?._id || token.serviceCenter) === String(serviceCenter?._id) && ['WAITING', 'CALLED', 'IN_PROGRESS'].includes(token.status));
+  const queuePosition = active?.queuePosition ?? (active?.peopleAhead !== null && active?.peopleAhead !== undefined ? active.peopleAhead + 1 : null);
+
+  useEffect(() => {
+    api.get('/service-centers').then(({ data }) => {
+      if (data.serviceCenters?.length) {
+        setCenters(data.serviceCenters);
+        localStorage.setItem('queuewise_service_centers', JSON.stringify(data.serviceCenters));
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!serviceCenter?._id) { setMessage('Please sign in again and select a service center.'); setLoading(false); return; }
+    setLoading(true);
+    Promise.all([api.get(`/services?serviceCenterId=${serviceCenter._id}`), api.get('/tokens/my')]).then(([serviceResponse, tokenResponse]) => {
+      const available = serviceResponse.data.services || [];
+      const existing = (tokenResponse.data.tokens || []).filter((token) => String(token.serviceCenter?._id || token.serviceCenter) === String(serviceCenter._id));
+      setServices(available);
+      setTokens(existing);
+      setQueue({ currentToken: existing.find((token) => ['WAITING', 'CALLED', 'IN_PROGRESS'].includes(token.status))?.currentToken || null });
+      setSelected(available[0]?._id || '');
+    }).catch((error) => setMessage(error.response?.data?.message || 'Unable to load services for this service center.')).finally(() => setLoading(false));
+  }, [serviceCenter?._id]);
+
+  useEffect(() => {
+    if (!active?.service?._id) return undefined;
+    socket.connect();
+    socket.emit('join-service', { serviceCenterId: active.serviceCenter?._id || serviceCenter?._id, serviceId: active.service._id });
+    const handler = (data) => {
+      setQueue(data);
+      const item = data.queue?.find((entry) => String(entry.tokenId) === String(active._id));
+      if (item) setTokens((current) => current.map((token) => token._id === active._id ? { ...token, ...item } : token));
+    };
+    socket.on('QUEUE_UPDATED', handler);
+    return () => { socket.off('QUEUE_UPDATED', handler); socket.disconnect(); };
+  }, [active?._id, active?.service?._id, active?.serviceCenter?._id, serviceCenter?._id]);
+
+  async function generate() {
+    if (!selected) { setMessage('Choose a service before generating a token.'); return; }
+    setBusy(true); setMessage('');
+    try {
+      const { data } = await api.post('/tokens', { serviceCenterId: serviceCenter._id, serviceId: selected });
+      setTokens((current) => [data.token, ...current]);
+      setMessage('Your token is ready.');
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Unable to generate token');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    setBusy(true);
+    try {
+      await api.patch(`/tokens/${active._id}/cancel`);
+      setTokens((current) => current.map((token) => token._id === active._id ? { ...token, status: 'CANCELLED' } : token));
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Unable to cancel token');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSwitchCenter(event) {
+    const nextId = event.target.value;
+    if (!nextId || nextId === serviceCenter?._id) return;
+    setSwitching(true);
+    setMessage('');
+    try {
+      await switchCenter(nextId);
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Unable to switch service center');
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  return <Shell><section className="page-heading"><div><span className="eyebrow">CUSTOMER DASHBOARD</span><h1>Your queue, at a glance.</h1><p className="muted">The estimate moves with the line, so you always know what comes next.</p></div><div className="date-stamp">LIVE / {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}<br /><div style={{ marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span>CENTER /</span><select aria-label="Switch service center" value={serviceCenter?._id || ''} disabled={switching || Boolean(active)} title={active ? 'Finish or cancel active token before switching' : 'Switch service center'} onChange={handleSwitchCenter} style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.15)', background: 'var(--surface, #fff)', color: 'inherit', cursor: active ? 'not-allowed' : 'pointer' }}>{centers.map((center) => <option key={center._id} value={center._id}>{center.name}</option>)}</select></div></div></section><section className="stats-grid"><Metric label="My token" value={active?.tokenNumber || '—'} accent /><Metric label="People ahead" value={active?.peopleAhead ?? '—'} /><Metric label="Estimated wait" value={active ? waitFmt(active.estimatedWaitingTime) : '—'} /><Metric label="Now serving" value={queue?.currentToken || '—'} /></section><div className="content-grid"><div className="panel queue-panel"><div className="panel-heading"><div><span className="eyebrow" role="button" tabIndex="0" onClick={() => document.getElementById('service-list')?.focus()}>GET A TOKEN</span><h2>Choose a service</h2></div><span className="service-count">{loading ? 'Loading…' : `${services.length} available`}</span></div>{message && <p className="inline-message">{message}</p>}{services.length ? <div className="service-list" id="service-list" tabIndex="-1">{services.map((service) => <button className={`service-option ${selected === service._id ? 'selected' : ''}`} key={service._id} onClick={() => setSelected(service._id)}><span className="service-icon">{service.prefix}</span><span><strong>{service.name}</strong><small>{service.description || 'Service desk'} · ~{service.averageServiceDuration} min</small></span><span className="radio-dot" /></button>)}</div> : !loading && <div className="empty-state"><span>✦</span><p>No active services are available.</p></div>}<button className="primary-button" onClick={generate} disabled={!selected || busy || Boolean(active)}>{busy ? 'Generating…' : active ? 'Active token in progress' : 'Generate token'} <span>→</span></button></div><div className="panel current-panel"><div className="panel-heading"><div><span className="eyebrow">CURRENT VISIT</span><h2>{active ? active.service?.name || 'Your service' : 'No active token'}</h2></div>{active && <span className={`status-pill ${active.status.toLowerCase()}`}>{active.status.replace('_', ' ')}</span>}</div>{active ? <><div className="big-token">{active.tokenNumber}</div><div className="detail-row"><span>Service center</span><strong>{active.serviceCenter?.name || serviceCenter?.name || '—'}</strong></div><div className="detail-row"><span>Queue position</span><strong>#{queuePosition ?? '—'}</strong></div><div className="detail-row"><span>Expected service</span><strong>~{active.service?.averageServiceDuration || 10} min</strong></div>{active.status === 'WAITING' && <button className="quiet-button" onClick={cancel} disabled={busy}>Cancel token</button>}</> : <div className="empty-state"><span>✦</span><p>Your next visit will appear here.</p></div>}</div></div></Shell>;
 }
 
 export function Metric({ label, value, accent }) { return <div className={`metric ${accent ? 'metric-accent' : ''}`}><span>{label}</span><strong>{value}</strong></div>; }
@@ -76,9 +227,18 @@ export function Metric({ label, value, accent }) { return <div className={`metri
 function StaffDashboard() { const [services, setServices] = useState([]); const [serviceId, setServiceId] = useState(''); const [data, setData] = useState({ queue: [], currentToken: null, currentTokenId: null, averageServiceDuration: 0 }); const [busy, setBusy] = useState(false); useEffect(() => { api.get('/services').then(({ data: response }) => { setServices(response.services); setServiceId(response.services[0]?._id || ''); }); }, []); useEffect(() => { if (!serviceId) return; const load = () => api.get(`/tokens/queue/${serviceId}`).then(({ data: response }) => setData(response)); load(); const timer = setInterval(load, 15000); return () => clearInterval(timer); }, [serviceId]); async function action(id, type) { setBusy(true); try { await api.post(`/tokens/${id}/${type}`); const { data: updated } = await api.get(`/tokens/queue/${serviceId}`); setData(updated); } finally { setBusy(false); } } return <Shell><section className="page-heading"><div><span className="eyebrow">STAFF CONSOLE</span><h1>Keep the line moving.</h1><p className="muted">One clear next action at a time.</p></div><select className="service-select" value={serviceId} onChange={(event) => setServiceId(event.target.value)}>{services.map((service) => <option key={service._id} value={service._id}>{service.name}</option>)}</select></section><section className="stats-grid"><Metric label="Waiting customers" value={data.queue.length} accent /><Metric label="Currently serving" value={data.currentToken || '—'} /><Metric label="Average actual service" value={fmt(data.averageServiceDuration)} /><Metric label="Queue health" value={data.queue.length ? 'Active' : 'Clear'} /></section><div className="content-grid staff-grid"><div className="panel current-panel"><div className="panel-heading"><div><span className="eyebrow">NOW SERVING</span><h2>{data.currentToken || 'No active service'}</h2></div>{data.currentToken && <span className="status-pill in_progress">IN PROGRESS</span>}</div>{data.currentToken ? <><div className="staff-customer">Customer in service</div><button className="primary-button" disabled={busy} onClick={() => action(data.currentTokenId, 'complete')}>Complete service <span>✓</span></button></> : <div className="empty-state"><span>◌</span><p>Call the next customer when ready.</p></div>}</div><div className="panel queue-panel"><div className="panel-heading"><div><span className="eyebrow">UP NEXT</span><h2>Waiting queue</h2></div></div>{data.queue.length ? <div className="staff-queue">{data.queue.map((token) => <div className="queue-row" key={token.tokenId}><div><strong>{token.tokenNumber}</strong><small>{token.peopleAhead} ahead · {waitFmt(token.estimatedWaitingTime)}</small></div><button className="small-button" disabled={busy} onClick={() => action(token.tokenId, token.status === 'CALLED' ? 'start' : 'call')}>{token.status === 'CALLED' ? 'Start' : 'Call'}</button></div>)}</div> : <div className="empty-state"><span>✦</span><p>No customers are waiting.</p></div>}</div></div></Shell>; }
 
 function AdminDashboard() {
-  const [stats, setStats] = useState(null); const [services, setServices] = useState([]); const [serviceCenters, setServiceCenters] = useState([]);
+  const [stats, setStats] = useState(null); const [services, setServices] = useState([]); const [serviceCenters, setServiceCenters] = useState(getStoredServiceCenters);
   const [form, setForm] = useState({ name: '', description: '', prefix: '', averageServiceDuration: 10, serviceCenter: '' }); const [message, setMessage] = useState('');
-  useEffect(() => { Promise.all([api.get('/admin/statistics'), api.get('/services'), api.get('/service-centers')]).then(([adminResponse, serviceResponse, centerResponse]) => { setStats(adminResponse.data.statistics); setServices(serviceResponse.data.services); setServiceCenters(centerResponse.data.serviceCenters || []); }).catch((error) => setMessage(error.response?.data?.message || 'Unable to load admin data')); }, []);
+  useEffect(() => {
+    Promise.all([api.get('/admin/statistics'), api.get('/services'), api.get('/service-centers')]).then(([adminResponse, serviceResponse, centerResponse]) => {
+      setStats(adminResponse.data.statistics);
+      setServices(serviceResponse.data.services);
+      if (centerResponse.data.serviceCenters?.length) {
+        setServiceCenters(centerResponse.data.serviceCenters);
+        localStorage.setItem('queuewise_service_centers', JSON.stringify(centerResponse.data.serviceCenters));
+      }
+    }).catch((error) => setMessage(error.response?.data?.message || 'Unable to load admin data'));
+  }, []);
   async function addService(event) { event.preventDefault(); try { const { data } = await api.post('/services', form); setServices((items) => [...items, data.service]); setForm({ name: '', description: '', prefix: '', averageServiceDuration: 10, serviceCenter: '' }); setMessage('Service added.'); } catch (error) { setMessage(error.response?.data?.message || 'Unable to add service'); } }
   return <Shell><section className="page-heading"><div><span className="eyebrow">ADMIN OVERVIEW</span><h1>The whole picture.</h1><p className="muted">A quiet read on demand, throughput, and service health.</p></div></section><section className="stats-grid admin-stats"><Metric label="Customers" value={stats?.customers ?? '—'} accent /><Metric label="Staff" value={stats?.staff ?? '—'} /><Metric label="Total tokens" value={stats?.totalTokens ?? '—'} /><Metric label="Completed" value={stats?.completed ?? '—'} /><Metric label="Waiting" value={stats?.waiting ?? '—'} /><Metric label="Avg. service" value={fmt(stats?.averageServiceDuration)} /></section><div className="content-grid"><div className="panel queue-panel"><div className="panel-heading"><div><span className="eyebrow">SERVICES</span><h2>Active services</h2></div></div>{services.map((service) => <div className="queue-row" key={service._id}><div><strong>{service.prefix} · {service.name}</strong><small>{service.description || 'No description'}</small></div><span className="service-time">{service.averageServiceDuration} min</span></div>)}</div><div className="panel queue-panel"><div className="panel-heading"><div><span className="eyebrow">NEW SERVICE</span><h2>Add a service</h2></div></div><form onSubmit={addService} className="compact-form"><select required value={form.serviceCenter} onChange={(event) => setForm({ ...form, serviceCenter: event.target.value })}><option value="">Select service center</option>{serviceCenters.map((center) => <option key={center._id} value={center._id}>{center.name}</option>)}</select><input required placeholder="Service name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /><input required maxLength="3" placeholder="Prefix (e.g. A)" value={form.prefix} onChange={(event) => setForm({ ...form, prefix: event.target.value })} /><input placeholder="Description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><input type="number" min="1" placeholder="Average minutes" value={form.averageServiceDuration} onChange={(event) => setForm({ ...form, averageServiceDuration: event.target.value })} /><button className="primary-button">Add service <span>+</span></button>{message && <p className="inline-message">{message}</p>}</form></div></div></Shell>;
 }
